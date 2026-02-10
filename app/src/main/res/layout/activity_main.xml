@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:padding="16dp">
+
+    <TextView
+        android:id="@+id/statusText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="A11y Kernel\n\n1) Enable Accessibility Service for this app.\n2) API runs on 127.0.0.1:7333.\n3) Bearer token default: openclaw-dev-token"
+        android:textSize="16sp" />
+
+</ScrollView>

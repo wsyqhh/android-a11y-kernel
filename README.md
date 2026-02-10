@@ -37,6 +37,20 @@ Output APK:
 
 `app/build/outputs/apk/debug/app-debug.apk`
 
+## Build on GitHub Actions
+
+This repo includes workflow: `.github/workflows/build-debug-apk.yml`
+
+- Trigger: push to `main` or manual `workflow_dispatch`
+- Output: downloadable artifact `app-debug-apk`
+
+How to use:
+
+1. Push code to `main` (or open Actions and run `Build Debug APK` manually)
+2. Open `Actions` tab in GitHub
+3. Enter latest `Build Debug APK` run
+4. Download artifact `app-debug-apk`
+
 ## Install
 
 ```bash

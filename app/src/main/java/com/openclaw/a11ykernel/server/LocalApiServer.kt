@@ -2,6 +2,7 @@ package com.openclaw.a11ykernel.server
 
 import com.openclaw.a11ykernel.BuildConfig
 import com.openclaw.a11ykernel.model.ActRequest
+import com.openclaw.a11ykernel.model.CapabilitiesResponse
 import com.openclaw.a11ykernel.model.HealthResponse
 import com.openclaw.a11ykernel.service.MyAccessibilityService
 import io.ktor.http.HttpStatusCode
@@ -39,6 +40,33 @@ class LocalApiServer(private val service: MyAccessibilityService) {
                         service = "android-a11y-kernel",
                         apiPort = port,
                         serviceEnabled = true,
+                        ts = System.currentTimeMillis()
+                    )
+                )
+            }
+
+            get("/capabilities") {
+                if (!authorized(call.request.headers["Authorization"])) {
+                    call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "unauthorized"))
+                    return@get
+                }
+                call.respond(
+                    CapabilitiesResponse(
+                        ok = true,
+                        rootAvailable = service.isRootAvailable(),
+                        onDeviceMode = true,
+                        actions = listOf(
+                            "tap",
+                            "type",
+                            "scroll",
+                            "back",
+                            "home",
+                            "wait",
+                            "done",
+                            "launch_app",
+                            "keyevent",
+                            "swipe"
+                        ),
                         ts = System.currentTimeMillis()
                     )
                 )

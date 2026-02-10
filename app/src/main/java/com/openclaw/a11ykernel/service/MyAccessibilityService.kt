@@ -57,6 +57,11 @@ class MyAccessibilityService : AccessibilityService() {
         return executor.execute(req)
     }
 
+    fun isRootAvailable(): Boolean {
+        val executor = actionExecutor ?: return false
+        return executor.isRootAvailable()
+    }
+
     companion object {
         private const val TAG = "A11yKernel"
     }

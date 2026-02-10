@@ -14,17 +14,30 @@ import com.openclaw.a11ykernel.model.Selector
 import com.openclaw.a11ykernel.model.UiElement
 
 class ActionExecutor(private val service: AccessibilityService) {
+    private val rootExecutor = RootInputExecutor()
+
+    fun isRootAvailable(): Boolean {
+        return try {
+            rootExecutor.isRootAvailable()
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     fun execute(req: ActRequest): ActionResult {
         val start = SystemClock.elapsedRealtime()
         val root = service.rootInActiveWindow
         val action = req.action.lowercase()
 
         val result = when (action) {
-            "tap" -> tap(root, req.selector, req.fallbackCoordinates)
+            "tap" -> tap(root, req.selector, req.fallbackCoordinates ?: req.coordinates)
             "type" -> type(root, req.selector, req.text)
             "back" -> simpleGlobal(AccessibilityService.GLOBAL_ACTION_BACK)
             "home" -> simpleGlobal(AccessibilityService.GLOBAL_ACTION_HOME)
             "scroll" -> scroll(root, req.direction)
+            "launch_app" -> launchApp(req.packageName)
+            "keyevent" -> keyevent(req.keycode)
+            "swipe" -> swipe(req)
             "wait" -> waitAction(req.timeoutMs ?: 350)
             "done" -> ActionResult(ok = true, elapsedMs = 0)
             else -> ActionResult(ok = false, error = "Unsupported action: ${req.action}", elapsedMs = 0)
@@ -39,13 +52,20 @@ class ActionExecutor(private val service: AccessibilityService) {
         if (matched != null) {
             val clickable = findClickableParent(matched)
             if (clickable != null && clickable.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
-                return ActionResult(ok = true, matchedElement = toElement(clickable), elapsedMs = 0)
+                return ActionResult(ok = true, executor = "a11y", matchedElement = toElement(clickable), elapsedMs = 0)
             }
         }
 
         if (fallbackCoordinates != null && fallbackCoordinates.size == 2) {
             val ok = tapByGesture(fallbackCoordinates[0].toFloat(), fallbackCoordinates[1].toFloat())
-            return if (ok) ActionResult(ok = true, elapsedMs = 0) else ActionResult(ok = false, error = "Fallback tap failed", elapsedMs = 0)
+            if (ok) return ActionResult(ok = true, executor = "gesture", elapsedMs = 0)
+
+            val rootTap = runCatching {
+                rootExecutor.tap(fallbackCoordinates[0], fallbackCoordinates[1])
+            }.getOrNull()
+            if (rootTap?.ok == true) return ActionResult(ok = true, executor = "root", elapsedMs = 0)
+            val rootErr = rootTap?.stderr?.takeIf { it.isNotBlank() }
+            return ActionResult(ok = false, error = rootErr ?: "Fallback tap failed", elapsedMs = 0)
         }
         return ActionResult(ok = false, error = "No tappable node matched selector", elapsedMs = 0)
     }
@@ -61,9 +81,15 @@ class ActionExecutor(private val service: AccessibilityService) {
         }
         val ok = target.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
         return if (ok) {
-            ActionResult(ok = true, matchedElement = toElement(target), elapsedMs = 0)
+            ActionResult(ok = true, executor = "a11y", matchedElement = toElement(target), elapsedMs = 0)
         } else {
-            ActionResult(ok = false, error = "ACTION_SET_TEXT failed", elapsedMs = 0)
+            val rootType = runCatching { rootExecutor.inputText(text) }.getOrNull()
+            if (rootType?.ok == true) {
+                ActionResult(ok = true, executor = "root", elapsedMs = 0)
+            } else {
+                val rootErr = rootType?.stderr?.takeIf { it.isNotBlank() }
+                ActionResult(ok = false, error = rootErr ?: "ACTION_SET_TEXT failed", elapsedMs = 0)
+            }
         }
     }
 
@@ -75,8 +101,23 @@ class ActionExecutor(private val service: AccessibilityService) {
             AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
         }
         val ok = node.performAction(action)
-        return if (ok) ActionResult(ok = true, matchedElement = toElement(node), elapsedMs = 0)
-        else ActionResult(ok = false, error = "Scroll action failed", elapsedMs = 0)
+        if (ok) return ActionResult(ok = true, executor = "a11y", matchedElement = toElement(node), elapsedMs = 0)
+
+        val fallback = runCatching {
+            val center = toElement(node).center
+            val x = center[0]
+            val y = center[1]
+            if ((direction ?: "forward").lowercase() == "backward") {
+                rootExecutor.swipe(x, y / 2, x, y, 220)
+            } else {
+                rootExecutor.swipe(x, y, x, y / 2, 220)
+            }
+        }.getOrNull()
+        return if (fallback?.ok == true) {
+            ActionResult(ok = true, executor = "root", elapsedMs = 0)
+        } else {
+            ActionResult(ok = false, error = fallback?.stderr ?: "Scroll action failed", elapsedMs = 0)
+        }
     }
 
     private fun waitAction(timeoutMs: Long): ActionResult {
@@ -86,8 +127,50 @@ class ActionExecutor(private val service: AccessibilityService) {
 
     private fun simpleGlobal(action: Int): ActionResult {
         val ok = service.performGlobalAction(action)
-        return if (ok) ActionResult(ok = true, elapsedMs = 0)
+        return if (ok) ActionResult(ok = true, executor = "a11y", elapsedMs = 0)
         else ActionResult(ok = false, error = "Global action failed", elapsedMs = 0)
+    }
+
+    private fun launchApp(packageName: String?): ActionResult {
+        if (packageName.isNullOrBlank()) {
+            return ActionResult(ok = false, error = "Missing packageName", elapsedMs = 0)
+        }
+        val result = runCatching { rootExecutor.launchApp(packageName) }.getOrNull()
+            ?: return ActionResult(ok = false, error = "launch_app failed", elapsedMs = 0)
+
+        return if (result.ok) {
+            ActionResult(ok = true, executor = "root", elapsedMs = 0)
+        } else {
+            ActionResult(ok = false, error = result.stderr.ifBlank { "launch_app failed" }, elapsedMs = 0)
+        }
+    }
+
+    private fun keyevent(code: Int?): ActionResult {
+        if (code == null) return ActionResult(ok = false, error = "Missing keycode", elapsedMs = 0)
+        val result = runCatching { rootExecutor.keyevent(code) }.getOrNull()
+            ?: return ActionResult(ok = false, error = "keyevent failed", elapsedMs = 0)
+        return if (result.ok) {
+            ActionResult(ok = true, executor = "root", elapsedMs = 0)
+        } else {
+            ActionResult(ok = false, error = result.stderr.ifBlank { "keyevent failed" }, elapsedMs = 0)
+        }
+    }
+
+    private fun swipe(req: ActRequest): ActionResult {
+        val from = req.from
+        val to = req.to
+        if (from == null || to == null || from.size != 2 || to.size != 2) {
+            return ActionResult(ok = false, error = "Missing from/to coordinates", elapsedMs = 0)
+        }
+        val result = runCatching {
+            rootExecutor.swipe(from[0], from[1], to[0], to[1], req.durationMs ?: 220)
+        }.getOrNull() ?: return ActionResult(ok = false, error = "swipe failed", elapsedMs = 0)
+
+        return if (result.ok) {
+            ActionResult(ok = true, executor = "root", elapsedMs = 0)
+        } else {
+            ActionResult(ok = false, error = result.stderr.ifBlank { "swipe failed" }, elapsedMs = 0)
+        }
     }
 
     private fun tapByGesture(x: Float, y: Float): Boolean {

@@ -18,8 +18,14 @@ data class ExpectedAfter(
 data class ActRequest(
     val action: String,
     val selector: Selector? = null,
+    val packageName: String? = null,
+    val keycode: Int? = null,
     val text: String? = null,
     val direction: String? = null,
+    val coordinates: List<Int>? = null,
+    val from: List<Int>? = null,
+    val to: List<Int>? = null,
+    @SerialName("duration_ms") val durationMs: Long? = null,
     @SerialName("timeout_ms") val timeoutMs: Long? = null,
     @SerialName("fallback_coordinates") val fallbackCoordinates: List<Int>? = null,
     @SerialName("expected_after") val expectedAfter: ExpectedAfter? = null
@@ -49,6 +55,7 @@ data class ScreenResponse(
 data class ActionResult(
     val ok: Boolean,
     val error: String? = null,
+    val executor: String? = null,
     @SerialName("elapsed_ms") val elapsedMs: Long,
     @SerialName("matched_element") val matchedElement: UiElement? = null
 )
@@ -59,5 +66,14 @@ data class HealthResponse(
     val service: String,
     @SerialName("api_port") val apiPort: Int,
     @SerialName("service_enabled") val serviceEnabled: Boolean,
+    val ts: Long
+)
+
+@Serializable
+data class CapabilitiesResponse(
+    val ok: Boolean,
+    @SerialName("root_available") val rootAvailable: Boolean,
+    @SerialName("on_device_mode") val onDeviceMode: Boolean,
+    val actions: List<String>,
     val ts: Long
 )

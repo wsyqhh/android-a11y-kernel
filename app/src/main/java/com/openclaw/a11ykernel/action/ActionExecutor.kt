@@ -8,17 +8,20 @@ import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
 import android.view.accessibility.AccessibilityNodeInfo
+import com.openclaw.a11ykernel.BuildConfig
 import com.openclaw.a11ykernel.model.ActRequest
 import com.openclaw.a11ykernel.model.ActionResult
 import com.openclaw.a11ykernel.model.Selector
 import com.openclaw.a11ykernel.model.UiElement
 
 class ActionExecutor(private val service: AccessibilityService) {
-    private val rootExecutor = RootInputExecutor()
+    private val rootEnabled = BuildConfig.ENABLE_ROOT_FALLBACK
+    private val rootExecutor = if (rootEnabled) RootInputExecutor() else null
 
     fun isRootAvailable(): Boolean {
+        if (!rootEnabled) return false
         return try {
-            rootExecutor.isRootAvailable()
+            rootExecutor?.isRootAvailable() == true
         } catch (_: Exception) {
             false
         }
@@ -35,9 +38,9 @@ class ActionExecutor(private val service: AccessibilityService) {
             "back" -> simpleGlobal(AccessibilityService.GLOBAL_ACTION_BACK)
             "home" -> simpleGlobal(AccessibilityService.GLOBAL_ACTION_HOME)
             "scroll" -> scroll(root, req.direction)
-            "launch_app" -> launchApp(req.packageName)
-            "keyevent" -> keyevent(req.keycode)
-            "swipe" -> swipe(req)
+            "launch_app" -> rootOnly { launchApp(req.packageName) }
+            "keyevent" -> rootOnly { keyevent(req.keycode) }
+            "swipe" -> rootOnly { swipe(req) }
             "wait" -> waitAction(req.timeoutMs ?: 350)
             "done" -> ActionResult(ok = true, elapsedMs = 0)
             else -> ActionResult(ok = false, error = "Unsupported action: ${req.action}", elapsedMs = 0)
@@ -59,6 +62,10 @@ class ActionExecutor(private val service: AccessibilityService) {
         if (fallbackCoordinates != null && fallbackCoordinates.size == 2) {
             val ok = tapByGesture(fallbackCoordinates[0].toFloat(), fallbackCoordinates[1].toFloat())
             if (ok) return ActionResult(ok = true, executor = "gesture", elapsedMs = 0)
+
+            if (!rootEnabled || rootExecutor == null) {
+                return ActionResult(ok = false, error = "Fallback tap failed and root fallback disabled", elapsedMs = 0)
+            }
 
             val rootTap = runCatching {
                 rootExecutor.tap(fallbackCoordinates[0], fallbackCoordinates[1])
@@ -83,6 +90,9 @@ class ActionExecutor(private val service: AccessibilityService) {
         return if (ok) {
             ActionResult(ok = true, executor = "a11y", matchedElement = toElement(target), elapsedMs = 0)
         } else {
+            if (!rootEnabled || rootExecutor == null) {
+                return ActionResult(ok = false, error = "ACTION_SET_TEXT failed and root fallback disabled", elapsedMs = 0)
+            }
             val rootType = runCatching { rootExecutor.inputText(text) }.getOrNull()
             if (rootType?.ok == true) {
                 ActionResult(ok = true, executor = "root", elapsedMs = 0)
@@ -102,6 +112,10 @@ class ActionExecutor(private val service: AccessibilityService) {
         }
         val ok = node.performAction(action)
         if (ok) return ActionResult(ok = true, executor = "a11y", matchedElement = toElement(node), elapsedMs = 0)
+
+        if (!rootEnabled || rootExecutor == null) {
+            return ActionResult(ok = false, error = "Scroll action failed and root fallback disabled", elapsedMs = 0)
+        }
 
         val fallback = runCatching {
             val center = toElement(node).center
@@ -132,10 +146,11 @@ class ActionExecutor(private val service: AccessibilityService) {
     }
 
     private fun launchApp(packageName: String?): ActionResult {
+        val root = rootExecutor ?: return ActionResult(ok = false, error = "Root fallback disabled", elapsedMs = 0)
         if (packageName.isNullOrBlank()) {
             return ActionResult(ok = false, error = "Missing packageName", elapsedMs = 0)
         }
-        val result = runCatching { rootExecutor.launchApp(packageName) }.getOrNull()
+        val result = runCatching { root.launchApp(packageName) }.getOrNull()
             ?: return ActionResult(ok = false, error = "launch_app failed", elapsedMs = 0)
 
         return if (result.ok) {
@@ -146,8 +161,9 @@ class ActionExecutor(private val service: AccessibilityService) {
     }
 
     private fun keyevent(code: Int?): ActionResult {
+        val root = rootExecutor ?: return ActionResult(ok = false, error = "Root fallback disabled", elapsedMs = 0)
         if (code == null) return ActionResult(ok = false, error = "Missing keycode", elapsedMs = 0)
-        val result = runCatching { rootExecutor.keyevent(code) }.getOrNull()
+        val result = runCatching { root.keyevent(code) }.getOrNull()
             ?: return ActionResult(ok = false, error = "keyevent failed", elapsedMs = 0)
         return if (result.ok) {
             ActionResult(ok = true, executor = "root", elapsedMs = 0)
@@ -157,13 +173,14 @@ class ActionExecutor(private val service: AccessibilityService) {
     }
 
     private fun swipe(req: ActRequest): ActionResult {
+        val root = rootExecutor ?: return ActionResult(ok = false, error = "Root fallback disabled", elapsedMs = 0)
         val from = req.from
         val to = req.to
         if (from == null || to == null || from.size != 2 || to.size != 2) {
             return ActionResult(ok = false, error = "Missing from/to coordinates", elapsedMs = 0)
         }
         val result = runCatching {
-            rootExecutor.swipe(from[0], from[1], to[0], to[1], req.durationMs ?: 220)
+            root.swipe(from[0], from[1], to[0], to[1], req.durationMs ?: 220)
         }.getOrNull() ?: return ActionResult(ok = false, error = "swipe failed", elapsedMs = 0)
 
         return if (result.ok) {
@@ -171,6 +188,13 @@ class ActionExecutor(private val service: AccessibilityService) {
         } else {
             ActionResult(ok = false, error = result.stderr.ifBlank { "swipe failed" }, elapsedMs = 0)
         }
+    }
+
+    private fun rootOnly(block: () -> ActionResult): ActionResult {
+        if (!rootEnabled || rootExecutor == null) {
+            return ActionResult(ok = false, error = "This action requires root-enabled build", elapsedMs = 0)
+        }
+        return block()
     }
 
     private fun tapByGesture(x: Float, y: Float): Boolean {

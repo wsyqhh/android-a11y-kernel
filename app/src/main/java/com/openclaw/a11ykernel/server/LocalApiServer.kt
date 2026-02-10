@@ -50,23 +50,25 @@ class LocalApiServer(private val service: MyAccessibilityService) {
                     call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "unauthorized"))
                     return@get
                 }
+                val rootAvailable = service.isRootAvailable()
+                val supportedActions = mutableListOf(
+                    "tap",
+                    "type",
+                    "scroll",
+                    "back",
+                    "home",
+                    "wait",
+                    "done"
+                )
+                if (BuildConfig.ENABLE_ROOT_FALLBACK) {
+                    supportedActions.addAll(listOf("launch_app", "keyevent", "swipe"))
+                }
                 call.respond(
                     CapabilitiesResponse(
                         ok = true,
-                        rootAvailable = service.isRootAvailable(),
+                        rootAvailable = rootAvailable,
                         onDeviceMode = true,
-                        actions = listOf(
-                            "tap",
-                            "type",
-                            "scroll",
-                            "back",
-                            "home",
-                            "wait",
-                            "done",
-                            "launch_app",
-                            "keyevent",
-                            "swipe"
-                        ),
+                        actions = supportedActions,
                         ts = System.currentTimeMillis()
                     )
                 )

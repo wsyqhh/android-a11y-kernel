@@ -25,36 +25,52 @@ Auth header for `/screen` and `/act`:
 
 Change token in `app/build.gradle.kts` via `LOCAL_API_TOKEN`.
 
+## Root and non-root variants
+
+- `nonroot`: no root fallback, no root-only actions (`launch_app`, `keyevent`, `swipe`)
+- `root`: enables root fallback and root-only actions
+- Check runtime support via `GET /capabilities`
+
 ## Build debug APK
 
 ```bash
-./gradlew assembleDebug
+./gradlew assembleNonrootDebug
 ```
 
 If `./gradlew` is missing on your machine, open this project in Android Studio and run `Build > Build APK(s)` for debug output.
 
-Output APK:
+Output APK (non-root):
 
-`app/build/outputs/apk/debug/app-debug.apk`
+`app/build/outputs/apk/nonroot/debug/app-nonroot-debug.apk`
+
+Optional root build:
+
+```bash
+./gradlew assembleRootDebug
+```
+
+Root APK:
+
+`app/build/outputs/apk/root/debug/app-root-debug.apk`
 
 ## Build on GitHub Actions
 
 This repo includes workflow: `.github/workflows/build-debug-apk.yml`
 
 - Trigger: push to `main` or manual `workflow_dispatch`
-- Output: downloadable artifact `app-debug-apk`
+- Output: downloadable artifact `app-nonroot-debug-apk`
 
 How to use:
 
 1. Push code to `main` (or open Actions and run `Build Debug APK` manually)
 2. Open `Actions` tab in GitHub
 3. Enter latest `Build Debug APK` run
-4. Download artifact `app-debug-apk`
+4. Download artifact `app-nonroot-debug-apk`
 
 ## Install
 
 ```bash
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+adb install -r app/build/outputs/apk/nonroot/debug/app-nonroot-debug.apk
 ```
 
 Then enable the app Accessibility Service in Android system settings.

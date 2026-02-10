@@ -17,6 +17,23 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "LOCAL_API_TOKEN", "\"openclaw-dev-token\"")
+        buildConfigField("boolean", "ENABLE_ROOT_FALLBACK", "true")
+    }
+
+    flavorDimensions += "mode"
+    productFlavors {
+        create("root") {
+            dimension = "mode"
+            applicationIdSuffix = ".root"
+            versionNameSuffix = "-root"
+            buildConfigField("boolean", "ENABLE_ROOT_FALLBACK", "true")
+        }
+        create("nonroot") {
+            dimension = "mode"
+            applicationIdSuffix = ".nonroot"
+            versionNameSuffix = "-nonroot"
+            buildConfigField("boolean", "ENABLE_ROOT_FALLBACK", "false")
+        }
     }
 
     buildTypes {
